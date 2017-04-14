@@ -1,0 +1,288 @@
+---
+title: "XGBoost in R"
+output: html_notebook
+---
+
+
+# 1 安装XGBoost
++ Github version
+```
+install.packages("drat", repos="https://cran.rstudio.com")
+drat:::addRepo("dmlc")
+install.packages("xgboost", repos="http://dmlc.ml/drat/", type = "source")
+```
+
++ CRAN version
+```
+install.packages("xgboost")
+```
+
+# 2 准备
+## 2.1 载入XGBoost
+```{r}
+require(xgboost)
+```
+
+## 2.2 载入Mushroom数据集
+```{r}
+data(agaricus.train, package='xgboost')
+data(agaricus.test, package='xgboost')
+train <- agaricus.train
+test <- agaricus.test
+```
+
++ 数据集中包含了`data`和`label`两个元素
+```{r}
+str(train)
+```
+
++ 数据集的维度
+```{r}
+dim(train$data)
+dim(test$data)
+```
+
++ `data`以稀疏矩阵的形式储存在`dgCMatrix`中，`label`是`{0,1}`数值向量
+```{r}
+class(train$data)[1]
+class(train$label)
+```
+
+# 3 训练初步的XGBoost模型
++ 使用如下参数训练模型：
+    + `objective = "binary:logistic"`：训练二元分类模型  
+    + `max_depth = 2`：由于数据集很小，树的最大深度设为2  
+    + `nthread = 2`：使用2个cpu线程  
+    + `nrounds = 2`：训练2轮模型  
+
+```{r}
+bstSparse <- xgboost(data = train$data, label = train$label, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic")
+```
+
++ 将数据以普通（稠密）矩阵的形式输入：
+```{r}
+bstDense <- xgboost(data = as.matrix(train$data), label = train$label, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic")
+```
+
++ 将数据以XGBoost提供的`xgb.DMatrix`形式输入：
+```{r}
+dtrain <- xgb.DMatrix(data = train$data, label = train$label)
+bstDMatrix <- xgboost(data = dtrain, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic")
+```
+
++ Verbose选项：
+```{r}
+# verbose = 0, no message
+bst <- xgboost(data = dtrain, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 0)
+```
+
+```{r}
+# verbose = 1, print evaluation metric
+bst <- xgboost(data = dtrain, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 1)
+```
+
+```{r}
+# verbose = 2, also print information about tree
+bst <- xgboost(data = dtrain, max_depth = 2, eta = 1, nthread = 2, nrounds = 2, objective = "binary:logistic", verbose = 2)
+```
+
+# 4 使用XGBoost进行初步预测
++ 对`test`数据集进行预测：
+```{r}
+pred <- predict(bst, test$data)
+
+# size of the prediction vector
+print(length(pred))
+
+# limit display of predictions to the first 10
+print(head(pred))
+```
+
++ `predict`输出的是概率，将其转换为`{0,1}`：
+```{r}
+prediction <- as.numeric(pred > 0.5)
+print(head(prediction))
+```
+
+# 5 衡量模型表现
++ 计算测试集上的平均错误率：
+```{r}
+err <- mean(as.numeric(pred > 0.5) != test$label)
+print(paste("test-error=", err))
+```
+
+# 6 高级特性
++ 准备数据集：
+```{r}
+dtrain <- xgb.DMatrix(data = train$data, label=train$label)
+dtest <- xgb.DMatrix(data = test$data, label=test$label)
+```
+
+## 6.1 监控训练过程，防止过拟合
++ 用`xgb.train`来衡量模型训练的过程，利用`watchlist`参数，防止过多的训练轮次导致过拟合：
+```{r}
+watchlist <- list(train=dtrain, test=dtest)
+
+bst <- xgb.train(data=dtrain, max_depth=2, eta=1, nthread = 2, nrounds=2, watchlist=watchlist, objective = "binary:logistic")
+```
+
++ 利用`xgb.csv`配合`early_stopping_rounds`参数防止过拟合：
+```{r}
+params = list(
+  objective = "binary:logistic",
+  eta=1,
+  max_depth=2,
+  nthread=2
+)
+bst <- xgb.cv(params=params, data=dtrain, nrounds=200, nfold=5, early_stopping_rounds=5, metrics = list("auc"))
+```
+
++ 可以通过`eval_metric`设置多种衡量模型效果的方式：
+```{r}
+bst <- xgb.train(data=dtrain, max_depth=2, eta=1, nthread = 2, nrounds=2, watchlist=watchlist, eval_metric = "error", eval_metric = "logloss", objective = "binary:logistic")
+```
+
+## 6.2 线性提升器
+之前的XGBoost都是基于提升树，除此之外，还可以建立基于线性提升器的模型。设置参数`booster = "gblinear"`，同时移除`eta`参数：
+```{r}
+bst <- xgb.train(data=dtrain, booster = "gblinear", max_depth=2, nthread = 2, nrounds=2, watchlist=watchlist, eval_metric = "error", eval_metric = "logloss", objective = "binary:logistic")
+```
+
+对于小的数据集，由于真实情况可能是线性可分的，线性提升器的效果可能更好。所以在建模时，建议尝试两种提升器并比较效果。
+
+# 7 操纵`xgb.DMatrix`
++ 使用`xgb.DMatrix.save`存储`xgb.DMatrix`对象
+```{r}
+xgb.DMatrix.save(dtrain, "dtrain.buffer")
+```
+
++ 使用`xgb.DMatrix`载入`xgb.DMatrix`对象
+```{r}
+# to load it in, simply call xgb.DMatrix
+dtrain2 <- xgb.DMatrix("dtrain.buffer")
+bst <- xgb.train(data=dtrain2, max_depth=2, eta=1, nthread = 2, nrounds=2, watchlist=watchlist, objective = "binary:logistic")
+```
+
++ 删除`xgb.DMatrix`对象
+```{r}
+file.remove("dtrain.buffer")
+```
+
++ 使用`getinfo`提取`xgb.DMatrix`对象中的信息（'label', 'weight', 'base_margin', 'nrow'）
+```{r}
+label = getinfo(dtest, "label")
+pred <- predict(bst, dtest)
+err <- as.numeric(sum(as.integer(pred > 0.5) != label))/length(label)
+print(paste("test-error=", err))
+```
+
+# 8 观察特征重要性和模型
++ 特征重要性评分
+```{r}
+importance_matrix <- xgb.importance(model = bst)
+print(importance_matrix)
+```
+
+```{r}
+xgb.plot.importance(importance_matrix = importance_matrix)
+```
+
++ `xgb.dump`将学得的模型导入text文件
+```{r}
+xgb.dump(bst, with_stats = T)
+```
+
++ `xgb.plot.tree`绘制学得的模型
+```{r}
+library(DiagrammeR)
+```
+
+```{r}
+xgb.plot.tree(model = bst)
+```
+
++ 保存和载入模型
+```{r}
+# save model to binary local file
+xgb.save(bst, "xgboost.model")
+```
+
+```{r}
+# load binary model to R
+bst2 <- xgb.load("xgboost.model")
+```
+
+```{r}
+pred2 <- predict(bst2, test$data)
+```
+
+比较原始模型和载入的模型是否完全一致
+```{r}
+print(paste("sum(abs(pred2-pred))=", sum(abs(pred2-pred))))
+```
+
+```{r}
+file.remove("./xgboost.model")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
