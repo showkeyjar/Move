@@ -1,0 +1,187 @@
+---
+title: "XGBoost调参"
+output: html_notebook
+---
+
+# 1 用任意参数训练XGBoost模型
+## 1.1 载入必要的包
+```{r}
+library(xgboost)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pROC)
+```
+
+## 1.2 载入数据集
+```{r}
+df_train = read.csv("F:/XGBoost/data/cs-training.csv", stringsAsFactors = FALSE) %>%
+  na.omit() %>%   # 删除包含缺失值的样本 
+  select(-`X`)    # 删除第一列索引列
+```
+
+## 1.3 设置初始参数  
+一共有8个参数需要调节：
++ 1 eta[默认0.3]
++ 2 nrounds通过xgb.cv和early.stop.round控制
++ 3 max_depth[默认6]
++ 4 min.child.weight[默认1]
++ 5 gamma[默认0]
++ 6 subsample[默认1]
++ 7 colsample_bytree[默认1]
++ 8 scale.pos.weight[默认1]
+
+### 1.3.1 `nrounds`
+```{r}
+xgb_params = list(
+  objective = "binary:logistic", # 二分类问题
+  eval_metric = "auc",           # 用AUC作为评价指标
+  # 设置需要调节的参数初始值
+  eta = 0.1,                     # 初始值设为0.1
+  max.depth = 5,                 # 取值最好在3-10之间，起始值在4-6之间都是不错的选择
+  min.child.weight = 1,          # 由于是不平衡的分类问题，选取较小的值
+  gamma = 0,                     # 初始值为0
+  subsample = 0.8,               # 最常见的初始值，典型值的范围在0.5-0.9之间
+  colsample_bytree = 0.8,        # 最常见的初始值，典型值的范围在0.5-0.9之间
+  scale.pos.weight = 1           # 类别不平衡，初始值设为1
+)
+```
+
+使用上述设置的参数拟合XGBoost基线模型
+```{r}
+set.seed(27)
+xgb_1 = xgb.cv(data = as.matrix(df_train %>%
+                                   select(-SeriousDlqin2yrs)),
+               label = df_train$SeriousDlqin2yrs,
+               params = xgb_params,
+               nrounds = 1000,
+               nfold = 5,                                                   # number of folds in K-fold
+               prediction = TRUE,                                           # return the prediction using the final model
+               showsd = TRUE,                                               # standard deviation of loss across folds
+               stratified = TRUE,                                           # sample is unbalanced; use stratified sampling
+               verbose = FALSE,
+               early.stop.round = 50
+)
+```
+
++ 使用`xgb.cv`获得交叉验证误差
+```{r}
+xgb_cv_1 = xgb.cv(params = xgb_params_1,
+                  data = as.matrix(df_train %>%
+                                     select(-SeriousDlqin2yrs)),
+                  label = df_train$SeriousDlqin2yrs,
+                  nrounds = 100, 
+                  nfold = 5,                                                   # number of folds in K-fold
+                  prediction = TRUE,                                           # return the prediction using the final model
+                  showsd = TRUE,                                               # standard deviation of loss across folds
+                  stratified = TRUE,                                           # sample is unbalanced; use stratified sampling
+                  verbose = TRUE,
+                  early.stop.round = 10
+)
+```
+
++ 绘制ROC曲线并计算AUC
+```{r}
+modelroc = roc(df_train$SeriousDlqin2yrs, xgb_cv_1$pred, thresholds = 0.5)
+plot(modelroc,print.auc=T,auc.polygon=T,grid=c(0.1,0.2),grid.col=c('green','red'),max.auc.polygon=T,auc.polygon.col='skyblue',print.thres=T)
+```
+
++ 绘制训练集、交叉验证AUC相对于训练轮次的变化趋势图
+```{r}
+xgb_cv_1$dt %>%
+  select(-contains("std")) %>%
+  mutate(IterationNum = 1:n()) %>%
+  gather(TestOrTrain, AUC, -IterationNum) %>%
+  ggplot(aes(x = IterationNum, y = AUC, group = TestOrTrain, color = TestOrTrain)) + 
+  geom_line() + 
+  theme_bw()
+```
+
+# 2 调参
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
