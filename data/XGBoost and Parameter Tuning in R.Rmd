@@ -319,6 +319,147 @@ grid_search_result %>% filter(desc_rank_auc == 1)
 最终确定，理想的max_depth值为3，理想的min_child_weight值为5。
 
 ### 4.1.2 gamma 参数调优
++ Gamma Tuning
+    + Always start with 0, use xgb.cv, and look how the train/test are faring. If you train CV skyrocketing over test CV at a blazing speed, this is where Gamma is useful instead of min_child_weight (because you need to control the complexity issued from the loss, not the loss derivative from the hessian weight in min_child_weight). Another choice typical and most preferred choice: step max_depth down.
+    + If Gamma is useful (i.e train CV skyrockets at godlike speed when test CV can’t follow), crank up Gamma. This is where the experience with tuning Gamma is useful (so you lose the lowest amount of time). Depending on what you see between the train/test CV increase speed, you try to find an appropriate Gamma. The higher the Gamma, the lower the difference between train/test CV will happen. If you have no idea of the value to use, put 10 and look what happens.
+
++ How to set Gamma values?
+    + If your train/test CV are always lying too close, it means you controlled way too much the complexity of xgboost, and the model can’t grow trees without pruning them (due to the loss threshold not reached thanks to Gamma). Lower Gamma (good relative value to reduce if you don’t know: cut 20% of Gamma away until you test CV grows without having the train CV frozen).
+    + If your train/test CV are differing too much, it means you did not control enough the complexity of xgboost, and the model grows too many trees without pruning them (due to the loss threshold not reached because of Gamma). Put a higher Gamma (good absolute value to use if you don’t know: +2, until your test CV can follow faster your train CV which goes slower, your test CV should be able to peak).
+    + If your train CV is stuck (not increasing, or increasing way too slowly), decrease Gamma: that value was too high and xgboost keeps pruning trees until it can find something appropriate (or it may end in an endless loop of testing + adding nodes but pruning them straight away…).
+
+```{r}
+grid_search_result = grid_search(dtrain, train_label,
+                                 eta = c(0.1),
+                                 max_depth = c(3),
+                                 min_child_weight = c(5),
+                                 gamma = c(0, 0.01, 0.1, 1, 3, 5, 10, 20),
+                                 subsample = c(0.8),
+                                 colsample_bytree = c(0.8),
+                                 lambda = c(1),
+                                 alpha = c(0),
+                                 scale_pos_weight = c(1))
+
+grid_search_result
+```
+
+```{r}
+grid_search_result %>% filter(desc_rank_auc == 1)
+```
+
+理想的gamma值为3，在这一参数值附近进一步调整，将步长设置为1。
+
+```{r}
+grid_search_result = grid_search(dtrain, train_label,
+                                 eta = c(0.1),
+                                 max_depth = c(3),
+                                 min_child_weight = c(5),
+                                 gamma = c(2, 3, 4),
+                                 subsample = c(0.8),
+                                 colsample_bytree = c(0.8),
+                                 lambda = c(1),
+                                 alpha = c(0),
+                                 scale_pos_weight = c(1))
+
+grid_search_result
+```
+
+```{r}
+grid_search_result %>% filter(desc_rank_auc == 1)
+```
+
+最终确定，理想的gamma值为3。
+
+### 4.1.3 subsample 和 colsample_bytree 参数调优
+在0.6到1.0的范围内，以0.1为步长，对subsample和colsample_bytree进行网格搜索。
+
+```{r}
+grid_search_result = grid_search(dtrain, train_label,
+                                 eta = c(0.1),
+                                 max_depth = c(3),
+                                 min_child_weight = c(5),
+                                 gamma = c(3),
+                                 subsample = c(0.6, 0.7, 0.8, 0.9, 1.0),
+                                 colsample_bytree = c(0.6, 0.7, 0.8, 0.9, 1.0),
+                                 lambda = c(1),
+                                 alpha = c(0),
+                                 scale_pos_weight = c(1))
+
+grid_search_result
+```
+
+```{r}
+grid_search_result %>% filter(desc_rank_auc == 1)
+```
+
+最终确定，理想的subsample值为0.7，理想的colsample_bytree值为0.8。
+
+### 4.2 alpha 和 lambda 正则化参数调优
+在0.6到1.0的范围内，以0.1为步长，对subsample和colsample_bytree进行网格搜索。
+
+```{r}
+grid_search_result = grid_search(dtrain, train_label,
+                                 eta = c(0.1),
+                                 max_depth = c(3),
+                                 min_child_weight = c(5),
+                                 gamma = c(3),
+                                 subsample = c(0.7),
+                                 colsample_bytree = c(0.8),
+                                 lambda = c(0, 1e-5, 1e-2, 0.1, 1, 100),
+                                 alpha = c(0, 1e-5, 1e-2, 0.1, 1, 100),
+                                 scale_pos_weight = c(1))
+
+grid_search_result
+```
+
+```{r}
+grid_search_result %>% filter(desc_rank_auc == 1)
+```
+
+理想的lambda值为100，理想的alpha值为1。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
